@@ -4,3 +4,11 @@ node_modules
 /.cache
 /build
 .env
+
+venv
+
+note.txt
+
+extracted_frames
+video_no_audio.mp4
+models

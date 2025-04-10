@@ -1,0 +1,17 @@
+
+# Kafka client
+kafka-python
+
+# AWS SDK for Python (for S3 download/upload)
+boto3<1.35
+botocore<1.35
+
+# OpenCV for image processing and DNN object detection
+opencv-python
+
+# Numerical library used by OpenCV
+numpy
+
+# Loading .env files for configuration
+python-dotenv
+
