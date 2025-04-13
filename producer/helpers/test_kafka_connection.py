@@ -10,12 +10,12 @@ print("Loaded environment variables from .env file (if found).")
 
 
 # --- Configuration ---
-KAFKA_BROKER = "kafka.spacerra.com:9092" 
-SECURITY_PROTOCOL = "SASL_SSL"
-SASL_MECHANISM = "SCRAM-SHA-512"
+KAFKA_BROKER = "kafka.spacerra.com:9094" 
+SECURITY_PROTOCOL = "SASL_PLAINTEXT"
+SASL_MECHANISM = "PLAIN"
 
 # --- SASL Credentials ---
-SASL_USERNAME = "spartacus"
+SASL_USERNAME = "admin"
 SASL_PASSWORD = os.environ.get('KAFKA_USER_PASSWORD')
 
 # --- SSL Truststore CA Path (Extracted PEM) ---

@@ -34,10 +34,10 @@ S3_BUCKET_NAME = "2025-group19"
 S3_METADATA_PREFIX = "metadata/" 
 
 # Kafka Configuration
-KAFKA_BROKER = "kafka.spacerra.com:9092"
-SECURITY_PROTOCOL = "SASL_SSL"
-SASL_MECHANISM = "SCRAM-SHA-512"
-SASL_USERNAME = "spartacus"
+KAFKA_BROKER = "kafka.spacerra.com:9094"
+SECURITY_PROTOCOL = "SASL_PLAINTEXT"
+SASL_MECHANISM = "PLAIN"
+SASL_USERNAME = "admin"
 KAFKA_TOPIC = "image_metadata_topic" 
 CONSUMER_GROUP_ID = "image-processor-group-1" 
 

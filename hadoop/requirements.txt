@@ -1,0 +1,10 @@
+
+# AWS SDK for Python (for S3) - Constrained for Hetzner compatibility
+# Use versions < 1.35 based on previous troubleshooting, adjust if needed
+boto3<1.35
+botocore<1.35
+
+
+
+# Loading .env files for configuration
+python-dotenv

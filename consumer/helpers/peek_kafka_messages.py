@@ -12,10 +12,10 @@ print("Loaded environment variables from .env file (if found).")
 
 
 # Kafka Configuration 
-KAFKA_BROKER = "kafka.spacerra.com:9092"
-SECURITY_PROTOCOL = "SASL_SSL"
-SASL_MECHANISM = "SCRAM-SHA-512"
-SASL_USERNAME = "spartacus"
+KAFKA_BROKER = "kafka.spacerra.com:9094"
+SECURITY_PROTOCOL = "SASL_PLAINTEXT"
+SASL_MECHANISM = "PLAIN"
+SASL_USERNAME = "admin"
 SASL_PASSWORD = os.environ.get('KAFKA_USER_PASSWORD')
 KAFKA_TOPIC = "image_metadata_topic" 
 

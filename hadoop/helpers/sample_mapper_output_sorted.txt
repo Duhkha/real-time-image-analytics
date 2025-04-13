@@ -1,0 +1,12 @@
+car	1
+stop sign	1
+car	1
+car	1
+car	1
+person	1
+car	1
+car	1
+person	1
+car	1
+car	1
+car	1
