@@ -15,7 +15,91 @@ This project implements a pipeline for ingesting images, performing real-time ob
 * **Frontend:** Remix (React framework)
 * **Infrastructure:** Hetzner Cloud (intended deployment)
 
-## Directory Structure
+## Cloud Services Setup (Kafka, Traefik, Elasticsearch, Hadoop)
+
+This project includes a cloud-ready Docker stack to support streaming, analytics, and infrastructure services required for the real-time image analytics pipeline. It is designed to run on a Hetzner Cloud instance with custom domain routing and HTTPS via **Traefik + ACME (Let’s Encrypt)**.
+
+### Services Included
+* **Treafik:** Reverse proxy and HTTPS termination for services like Kafka, Elasticsearch, Hadoop
+* **Kafka:** Secure Kafka broker with SASL/PLAIN auth (JAAS configured)
+* **Elasticsearch:** Fast metadata indexing and querying (with optional Basic Auth middleware)
+* **Hadoop:** Pseudo-distributed HDFS NameNode UI for batch processing preview
+
+### Cloud Directory Structure
+<pre>
+.
+├── docker-compose.yml
+├── kafka-jaas/
+│   └── kafka_server_jaas.conf
+├── traefik/
+│   ├── traefik.yml
+│   ├── acme/             # volume for certs (Let’s Encrypt)
+│   └── auth/             # volume for basic-auth users file
+</pre>
+
+
+### Security
+* Kafka uses **JAAS** with **SASL/PLAIN** for secure inter-broker and client connections.
+* Traefik automatically provisions **SSL certificates via Let’s Encrypt** using the websecure entry point.
+* **Basic Auth** is applied to UI services like Elasticsearch and Hadoop using a mounted users file (auth/usersfile).
+
+### Domain Routing via Traefik
+* https://kafka.spacerra.com -> Kafka clients onlty, not web
+* https://elastic.spacerra.com -> Elasticsearch REST & UI
+* https://hadoop.spacerra.com -> HDFS NameNode UI
+
+### Required System Packages (Install with apt)
+
+```bash
+sudo apt update && sudo apt install -y \
+  docker.io \
+  docker-compose \
+  apache2-utils \
+  curl \
+  net-tools
+```
+
+### Setup & Run
+
+1. **Prepare TLS volume:**
+
+```bash
+mkdir -p traefik/acme
+chmod 600 traefik/acme
+```
+
+2. **Create Basic Auth File:**
+
+```bash
+mkdir -p traefik/auth
+htpasswd -nb admin yourpassword > traefik/auth/usersfile
+```
+
+3. **Create Kafka JAAS Config:**
+
+```bash
+mkdir -p kafka-jaas
+nano kafka-jaas/kafka_server_jaas.conf
+```
+
+Paste this content:
+
+```apacheconf
+KafkaServer {
+  org.apache.kafka.common.security.plain.PlainLoginModule required
+  username="your_username"
+  password="your_password"
+  user_admin="your_password";
+};
+```
+
+4. **Launch stack:**
+
+```bash
+docker-compose up -d --build
+```
+
+## Project Directory Structure 
 
 * **`/producer`**: Contains scripts related to image ingestion.
     * Takes local images (from `producer/new_pics/` or `producer/extracted_frames/`).
