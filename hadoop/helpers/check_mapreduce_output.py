@@ -1,18 +1,17 @@
-#!/usr/bin/env python3
 import os
 import sys
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-load_dotenv()  # Load credentials from .env
+load_dotenv()  
 
 # --- Configuration ---
 S3_ACCESS_KEY = os.environ.get('HETZNER_S3_ACCESS_KEY')
 S3_SECRET_KEY = os.environ.get('HETZNER_S3_SECRET_KEY')
-S3_ENDPOINT_URL = "https://nbg1.your-objectstorage.com"  # Or your specific endpoint
+S3_ENDPOINT_URL = "https://nbg1.your-objectstorage.com" 
 S3_BUCKET_NAME = "2025-group19"
-OUTPUT_S3_PREFIX = "mapreduce-output/object-counts/"  # The prefix where MapReduce writes output
+OUTPUT_S3_PREFIX = "mapreduce-output/object-counts/"  
 
 # --- End Configuration ---
 
@@ -20,12 +19,10 @@ print("--- Checking MapReduce Output in S3 ---")
 print(f"Bucket: '{S3_BUCKET_NAME}'")
 print(f"Output Prefix: '{OUTPUT_S3_PREFIX}'")
 
-# --- Validate Credentials ---
 if not all([S3_ACCESS_KEY, S3_SECRET_KEY]):
     print("Error: Missing S3 credentials in .env")
     sys.exit(1)
 
-# --- Create S3 Client ---
 s3_client = None
 try:
     s3_client = boto3.client(
@@ -39,7 +36,6 @@ except Exception as e:
         print(f"Error creating S3 client: {e}")
         sys.exit(1)
 
-# --- List Objects in Output Prefix ---
 print(f"\nListing objects in 's3://{S3_BUCKET_NAME}/{OUTPUT_S3_PREFIX}' ...")
 try:
     response = s3_client.list_objects_v2(
@@ -51,7 +47,6 @@ try:
         for obj in response['Contents']:
             print(f"  - Key: '{obj['Key']}', Size: {obj['Size']} bytes")
 
-        # Find the first part-r file to read
         part_r_file = None
         for obj in response['Contents']:
             if 'part-r-' in obj['Key']:
@@ -67,7 +62,7 @@ try:
                 )
                 content = obj_response['Body'].read().decode('utf-8')
                 print("\n--- First 1000 characters of output file ---")
-                print(content[:1000])  # Print only the first 1000 characters
+                print(content[:1000]) 
                 obj_response['Body'].close()
 
             except ClientError as e:

@@ -13,7 +13,7 @@ def main():
                 if 'label' in detection:
                     print("{}\t{}".format(detection['label'], 1))
     except:
-        pass  # Still safely ignore malformed files
+        pass  
 
 if __name__ == "__main__":
     main()

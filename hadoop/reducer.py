@@ -19,17 +19,12 @@ def main():
                 current_count += count
             else:
                 if current_label is not None:
-                    # Use .format() instead of f-string
                     print("{}\t{}".format(current_label, current_count))
                 current_label = label
                 current_count = count
         except:
-            # Ignore errors in parsing or processing individual lines
-            continue # Use continue to proceed to next line on error
-
-    # Output the last label count
+            continue 
     if current_label is not None:
-         # Use .format() instead of f-string
         print("{}\t{}".format(current_label, current_count))
 
 if __name__ == "__main__":

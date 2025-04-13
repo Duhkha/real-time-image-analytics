@@ -1,14 +1,13 @@
-#!/usr/bin/env python3
 import os
 import sys
 import json
-import datetime # Added for sample doc generation if needed later
+import datetime 
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
-from elasticsearch.exceptions import RequestError, ConnectionError, NotFoundError # Added specific exceptions
+from elasticsearch.exceptions import RequestError, ConnectionError, NotFoundError
 
 # --- Configuration ---
 load_dotenv()
@@ -17,20 +16,20 @@ print("Loaded environment variables.")
 # S3 Configuration
 S3_ACCESS_KEY = os.environ.get('HETZNER_S3_ACCESS_KEY')
 S3_SECRET_KEY = os.environ.get('HETZNER_S3_SECRET_KEY')
-S3_ENDPOINT_URL = os.environ.get('S3_ENDPOINT_URL', "https://nbg1.your-objectstorage.com") # Default or from .env
-S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', "2025-group19") # Default or from .env
-S3_METADATA_PREFIX = "metadata/" # IMPORTANT: Ensure this ends with '/'
+S3_ENDPOINT_URL = os.environ.get('S3_ENDPOINT_URL', "https://nbg1.your-objectstorage.com") 
+S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', "2025-group19")
+S3_METADATA_PREFIX = "metadata/"
 
 # Elasticsearch Configuration
 ES_HOST_URL = os.environ.get('ES_HOST_URL', 'https://elastic.spacerra.com')
 ES_USERNAME = os.environ.get('ES_USERNAME', 'admin')
-ES_PASSWORD = os.environ.get('ES_PASSWORD') # Must be in .env
-ES_INDEX_NAME = "image-detections-v1" # Choose an index name
+ES_PASSWORD = os.environ.get('ES_PASSWORD') 
+ES_INDEX_NAME = "image-detections-v1"
 
 # Indexing Control
 BATCH_SIZE = 500 # How many docs to send in one bulk request
 # !!! SET THIS FOR TESTING - PROCESS ONLY FIRST 1000 S3 FILES !!!
-MAX_FILES_TO_PROCESS = 1000
+MAX_FILES_TO_PROCESS = None
 # Set to None later to process everything
 # --- End Configuration ---
 
@@ -44,8 +43,8 @@ def create_es_client():
         client = Elasticsearch(
             [ES_HOST_URL],
             basic_auth=(ES_USERNAME, ES_PASSWORD),
-            verify_certs=False, # Keep False based on previous results, prints warnings
-            request_timeout=60 # Increased timeout
+            verify_certs=False, 
+            request_timeout=60 
         )
         if not client.ping():
             print("Error: Could not connect to Elasticsearch (ping failed).")
@@ -119,7 +118,6 @@ def generate_actions(s3_client):
     """
     processed_files = 0
     paginator = s3_client.get_paginator('list_objects_v2')
-    # Ensure prefix ends with / for proper listing
     s3_prefix = S3_METADATA_PREFIX if S3_METADATA_PREFIX.endswith('/') else S3_METADATA_PREFIX + '/'
     page_iterator = paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=s3_prefix)
 
@@ -130,7 +128,6 @@ def generate_actions(s3_client):
                 continue
             for obj in page['Contents']:
                 s3_key = obj['Key']
-                # Skip directories - check if key IS the prefix or ends with /
                 if s3_key == s3_prefix or s3_key.endswith('/') or obj['Size'] == 0:
                     continue
 
@@ -157,29 +154,27 @@ def generate_actions(s3_client):
                         for detection in metadata['detections']:
                             doc = base_doc.copy()
                             doc.update(detection)
-                            # Basic cleanup/validation for box field
                             if 'box' in doc and isinstance(doc['box'], list):
                                 try:
-                                     # Ensure all elements are convertible to int
                                      doc['box'] = [int(x) for x in doc['box']]
                                 except (ValueError, TypeError):
                                      print(f"Warning: Invalid 'box' data in {s3_key}, setting box=None. Data: {doc.get('box')}", file=sys.stderr)
-                                     doc['box'] = None # Set to null if conversion fails
+                                     doc['box'] = None 
                             else:
-                                doc['box'] = None # Set to null if not list or missing
+                                doc['box'] = None 
 
                             action = {
                                 "_index": ES_INDEX_NAME,
                                 "_source": doc,
                             }
-                            yield action # Yield the dictionary for bulk helper
+                            yield action 
 
                     processed_files += 1
-                    if processed_files % 200 == 0: # Print progress every 200 files
+                    if processed_files % 200 == 0: 
                          print(f"  Prepared actions for {processed_files} files...")
                     if MAX_FILES_TO_PROCESS is not None and processed_files >= MAX_FILES_TO_PROCESS:
                         print(f"Reached MAX_FILES_TO_PROCESS limit ({MAX_FILES_TO_PROCESS}). Stopping S3 iteration.")
-                        return # Stop the generator
+                        return 
 
                 except json.JSONDecodeError:
                     print(f"Warning: Skipping invalid JSON in file {s3_key}", file=sys.stderr)
@@ -199,76 +194,57 @@ def main():
     es = create_es_client()
     s3 = create_s3_client()
 
-    # Ensure index exists with mapping
     create_index_if_not_exists(es, ES_INDEX_NAME)
 
     print(f"\nStarting bulk indexing to index '{ES_INDEX_NAME}'...")
     success_count = 0
     failed_count = 0
-    processed_actions_count = 0 # Track expected actions processed
+    processed_actions_count = 0 
 
     # --- Robust Bulk Processing Loop ---
     try:
-        # Use the bulk helper, telling it not to raise errors immediately
-        # We will check the success/fail status of each item it yields
         for item in bulk(client=es, actions=generate_actions(s3), chunk_size=BATCH_SIZE, request_timeout=120, raise_on_error=False, raise_on_exception=False):
-            # DEBUG: Log the raw item received from the bulk helper
-            # print(f"DEBUG: Raw item received from bulk: {item!r}", file=sys.stderr)
-
-            # Check the type of the item yielded by the bulk helper
             if isinstance(item, tuple) and len(item) == 2:
-                # This is the EXPECTED format: (bool_success, dict_info)
                 processed_actions_count += 1
                 ok, action_info = item
                 if ok:
                     success_count += 1
                 else:
                     failed_count += 1
-                    # Extract more detailed error if possible
                     error_details = "Unknown error"
                     if isinstance(action_info, dict):
-                         action_type = next(iter(action_info)) # e.g., 'index', 'create'
+                         action_type = next(iter(action_info)) 
                          error_details = action_info.get(action_type, {}).get('error', "No error details provided")
                     print(f"WARN: Failed action info: {error_details}", file=sys.stderr)
 
             elif isinstance(item, int):
-                # WORKAROUND for observed behavior where bulk yields an integer count
                 print(f"WARN: Bulk helper yielded an integer ({item}). This might be a summary count or an anomaly. Relying on final count check.", file=sys.stderr)
-                # We won't add this to success/fail counts from the loop, rely on final check
                 pass
 
             elif isinstance(item, list) and not item:
-                 # WORKAROUND for observed behavior where bulk yields an empty list
                  print(f"WARN: Bulk helper yielded an empty list. Ignoring.", file=sys.stderr)
                  pass
 
             else:
-                # Unexpected item format from bulk helper
                  print(f"ERROR: Unexpected item format received from bulk helper: {item!r}", file=sys.stderr)
-                 failed_count += 1 # Count as failure
+                 failed_count += 1 
 
-            # Print progress periodically based on successfully unpacked actions
             if processed_actions_count > 0 and processed_actions_count % (BATCH_SIZE * 2) == 0: # Print less often
                   print(f"  Processed ~{processed_actions_count} actions ({success_count} success, {failed_count} failures)...")
 
     except Exception as e:
-        # Catch errors outside the bulk item processing loop (e.g., connection error during bulk)
         print(f"\nFATAL: An error occurred during bulk execution: {e}", file=sys.stderr)
     finally:
-        # This final block always runs
         print(f"\n--- Indexing Loop Finished ---")
         print(f"Loop processed {processed_actions_count} expected actions reported by bulk helper.")
         print(f"Success count from loop reports: {success_count}")
         print(f"Failure/Anomaly count from loop reports: {failed_count}")
-        # Verify final count directly from Elasticsearch as the most reliable indicator
         try:
-             # Refresh index before counting for potentially better accuracy
              es.indices.refresh(index=ES_INDEX_NAME)
              final_count = es.count(index=ES_INDEX_NAME).get('count', 'N/A')
              print(f"Final document count check in index '{ES_INDEX_NAME}': {final_count}")
         except Exception as e:
              print(f"Could not verify final count in index '{ES_INDEX_NAME}': {e}")
-    # --- END Robust Bulk Processing Loop ---
 
 
 if __name__ == "__main__":

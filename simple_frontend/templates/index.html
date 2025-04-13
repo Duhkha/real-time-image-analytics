@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Detection Analytics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/moment@^2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment@^1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Image Detection Dashboard</h1>
+        <p style="color:#ddd;">Showing data for: {{ display_date or '2025-04-10' }} (17:00-20:00 UTC)</p>
+    </header>
+
+    <section class="metrics">
+        <h2>Detections Summary ({{ display_date or 'Fixed Date' }} 17:00-20:00 UTC)</h2>
+        <div class="controls">
+            <label for="labelSelectorTotal">Show total for:</label>
+            <select id="labelSelectorTotal">
+                <option value="car" selected>Car</option>
+                <option value="person">Person</option>
+                <option value="truck">Truck</option>
+                <option value="bus">Bus</option>
+                <option value="traffic light">Traffic Light</option>
+                <option value="bicycle">Bicycle</option>
+                <option value="motorbike">Motorbike</option>
+                <option value="stop sign">Stop Sign</option>
+                <option value="bench">Bench</option>
+                <option value="chair">Chair</option>
+                <option value="pottedplant">Potted Plant</option>
+                <option value="backpack">Backpack</option>
+                <option value="handbag">Handbag</option>
+                <option value="umbrella">Umbrella</option>
+                <option value="clock">Clock</option>
+                <option value="horse">Horse</option>
+            </select>
+        </div>
+        <p>Total <strong id="selected-label-text">Car</strong> detected: <strong id="selected-label-count">Loading...</strong></p>
+    </section>
+
+    <section class="chart-container">
+        <h2>Overall Detection Counts ({{ display_date or 'Fixed Date' }} 17:00-20:00 UTC, Top 15)</h2>
+        <div>
+            <canvas id="labelChart"></canvas>
+        </div>
+    </section>
+
+    <section class="chart-container">
+         <h2>Detections Over Time (Top 15 Labels, {{ display_date or 'Fixed Date' }} 17:00-20:00 UTC, 15min intervals)</h2>
+         <div>
+            <canvas id="timelineChart"></canvas>
+        </div>
+    </section>
+
+    <footer>
+        <p>Real-Time Analytics Pipeline</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
