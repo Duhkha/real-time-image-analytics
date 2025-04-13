@@ -19,7 +19,7 @@ services:
       - ./traefik/acme:/acme
       - ./traefik/auth:/auth
     restart: unless-stopped
-    networks:                # ← add this block (or a one‑liner)**
+    networks:
       - internal 
 
   ############################################
@@ -61,7 +61,7 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false     # Basic Auth handled by Traefik instead
+      - xpack.security.enabled=false
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.elastic.rule=Host(`elastic.${DOMAIN_BASE}`)"
@@ -91,7 +91,7 @@ services:
   # Basic‑Auth middleware definition
   ############################################
   basicauth-mw:
-    image: traefik/whoami   # tiny no‑op container just to host labels
+    image: traefik/whoami
     labels:
       - "traefik.enable=true"
       - "traefik.http.services.dummy.loadbalancer.server.port=65535"

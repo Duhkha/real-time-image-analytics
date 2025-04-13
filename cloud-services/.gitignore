@@ -1,0 +1,2 @@
+traefik/acme/acme.json
+traefik/auth/users.htpasswd
