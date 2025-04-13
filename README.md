@@ -139,6 +139,16 @@ docker-compose up -d --build
 **(Refer to component READMEs for specific commands)**
 
 1.  **Clone Repository:** Get the code.
+```bash
+git clone https://github.com/ibu-fenms512/2025-group19.git
+```
+```bash
+git clone git@github.com:ibu-fenms512/2025-group19.git
+```
+```bash
+gh repo clone ibu-fenms512/2025-group19
+```
+
 2.  **Backend Setup (`producer` & `consumer`):**
     * Navigate into each directory (`cd producer`, `cd consumer`).
     * Create a Python virtual environment (`python -m venv venv`).
@@ -146,10 +156,47 @@ docker-compose up -d --build
     * Install dependencies (`pip install -r requirements.txt`).
     * Create a `.env` file in *each* directory and add the required credentials (Hetzner S3 keys, Kafka password). **Ensure `.env` files are in your root `.gitignore`!**
     * **Crucially for Consumer:** Run `python helpers/download_models.py` inside the `consumer` directory (with venv active) to download the YOLO model files.
+
+```bash
+cd producer  # or cd consumer
+
+# Create a virtual environment
+python3 -m venv venv
+
+# Activate the virtual environment
+source venv/bin/activate  # for Linux/macOS
+# .\venv\Scripts\activate  # for Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create and configure your .env file
+touch .env  # or cp .env.example .env (if available)
+
+# Add the following to your .env:
+# AWS_ACCESS_KEY_ID=your_hetzner_key
+# AWS_SECRET_ACCESS_KEY=your_hetzner_secret
+# KAFKA_USERNAME=admin
+# KAFKA_PASSWORD=your_password
+```
+**Consumer only: Run this to download YOLO model files:**
+```bash
+python helpers/download_models.py
+```
 3.  **Frontend Setup:**
     * Navigate into the `frontend` directory (`cd frontend`).
     * Install Node.js dependencies (e.g., `npm install` or `yarn install`).
     * Configure frontend environment variables if needed (see `frontend/README.md`).
+
+```bash
+cd frontend
+
+# Install Node.js dependencies
+npm install  # or yarn install
+
+# Configure environment variables if needed
+touch .env  # or cp .env.example .env
+```
 
 ## Running the Pipeline
 
@@ -160,6 +207,12 @@ docker-compose up -d --build
     * Activate the venv.
     * Run: `python main_consumer.py`
     * Leave it running (it waits for messages).
+
+```bash
+cd consumer
+source venv/bin/activate
+python main_consumer.py
+```
 2.  **Start Producer:**
     * Navigate to the `producer` directory.
     * Activate the venv.
@@ -167,10 +220,24 @@ docker-compose up -d --build
     * Add images to `producer/new_pics/` and run `python helpers/process_new_images.py` to prepare them, OR place images directly in `producer/extracted_frames/` if pre-processed.
     * Run: `python main_producer.py`
     * (If continuous, leave it running. If batch, it will process new files and exit).
+
+```bash
+cd producer
+source venv/bin/activate
+
+# Optionally preprocess images
+python helpers/process_new_images.py
+
+# Then run the producer
+python main_producer.py
+```
 3.  **Start Frontend:**
     * Navigate to the `frontend` directory.
     * Run the development server (e.g., `npm run dev` or `yarn dev`).
     * Access the frontend in your browser.
-
+```bash
+cd frontend
+npm run dev  # or yarn dev
+```
 
 *This README last updated around: Thursday, April 10, 2025.*
