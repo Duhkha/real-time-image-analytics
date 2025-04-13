@@ -19,6 +19,8 @@ This project implements a pipeline for ingesting images, performing real-time ob
 
 This project includes a cloud-ready Docker stack to support streaming, analytics, and infrastructure services required for the real-time image analytics pipeline. It is designed to run on a Hetzner Cloud instance with custom domain routing and HTTPS via **Traefik + ACME (Let’s Encrypt)**.
 
+**The docker.compose.yml can be found in cloud-services folder in the project**
+
 ### Services Included
 * **Treafik:** Reverse proxy and HTTPS termination for services like Kafka, Elasticsearch, Hadoop
 * **Kafka:** Secure Kafka broker with SASL/PLAIN auth (JAAS configured)
@@ -117,6 +119,7 @@ docker-compose up -d --build
 * **`/frontend`**: Contains the Remix web application for visualization.
     * Queries backend services (likely an API layer interacting with S3 metadata or Elasticsearch in a future iteration) to display processing results.
     * See `frontend/README.md` (or standard Remix project docs) for details.
+* **`/cloud-services`**: Contains a copy of docker-compose.yml that is used to build the services stack on our external cloud server.
 
 ## Workflow
 
