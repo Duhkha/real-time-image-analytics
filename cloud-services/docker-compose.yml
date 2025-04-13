@@ -1,0 +1,102 @@
+
+services:
+  ############################################
+  # Reverse proxy & SSL termination
+  ############################################
+  traefik:
+    image: traefik:${TRAEFIK_VERSION}
+    command:
+      - --providers.docker
+      - --providers.file.filename=/etc/traefik/traefik.yml
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/acme:/acme
+      - ./traefik/auth:/auth
+    restart: unless-stopped
+    networks:                # ← add this block (or a one‑liner)**
+      - internal 
+
+  ############################################
+  # Kafka single‑broker
+  ############################################
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9094:9094"
+    environment:
+      CLUSTER_ID: "3YcXj0FIRN6G8mFqaFyP6g"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: SASL_PLAINTEXT://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka.spacerra.com:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_SUPER_USERS: "User:admin"
+      KAFKA_JMX_PORT: 9999
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
+    volumes:
+      - ./kafka-jaas/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf:ro
+    networks:
+      - internal
+
+  ############################################
+  # Elasticsearch
+  ############################################
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false     # Basic Auth handled by Traefik instead
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.elastic.rule=Host(`elastic.${DOMAIN_BASE}`)"
+      - "traefik.http.routers.elastic.entrypoints=websecure"
+      - "traefik.http.routers.elastic.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.elastic.middlewares=basicauth@docker"
+      - "traefik.http.services.elastic.loadbalancer.server.port=9200"
+    networks: [internal]
+
+  ############################################
+  # Hadoop (pseudo‑distributed NameNode UI)
+  ############################################
+  hadoop:
+    image: ${HADOOP_IMAGE}
+    environment:
+      - CLUSTER_NAME=spacerra-hadoop
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hadoop.rule=Host(`hadoop.${DOMAIN_BASE}`)"
+      - "traefik.http.routers.hadoop.entrypoints=websecure"
+      - "traefik.http.routers.hadoop.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.hadoop.middlewares=basicauth@docker"
+      - "traefik.http.services.hadoop.loadbalancer.server.port=9870"
+    networks: [internal]
+
+  ############################################
+  # Basic‑Auth middleware definition
+  ############################################
+  basicauth-mw:
+    image: traefik/whoami   # tiny no‑op container just to host labels
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.dummy.loadbalancer.server.port=65535"
+      - "traefik.http.middlewares.basicauth.basicauth.usersfile=${BASIC_AUTH_FILE}"
+
+networks:
+  internal:
+    driver: bridge
