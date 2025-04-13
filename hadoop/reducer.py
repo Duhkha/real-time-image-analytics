@@ -4,28 +4,29 @@
 import sys
 
 def main():
-    current_label = None
-    current_count = 0
+    current_key = None
+    timestamps = []
 
     for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
-        try:
-            label, count_str = line.split('\t', 1)
-            count = int(count_str)
 
-            if current_label == label:
-                current_count += count
-            else:
-                if current_label is not None:
-                    print("{}\t{}".format(current_label, current_count))
-                current_label = label
-                current_count = count
+        try:
+            key, timestamp = line.split('\t', 1)
         except:
-            continue 
-    if current_label is not None:
-        print("{}\t{}".format(current_label, current_count))
+            continue
+
+        if current_key == key:
+            timestamps.append(timestamp)
+        else:
+            if current_key is not None:
+                print("{}\t{}\t[{}]".format(current_key, len(timestamps), ", ".join(timestamps)))
+            current_key = key
+            timestamps = [timestamp]
+
+    if current_key is not None:
+        print("{}\t{}\t[{}]".format(current_key, len(timestamps), ", ".join(timestamps)))
 
 if __name__ == "__main__":
     main()
