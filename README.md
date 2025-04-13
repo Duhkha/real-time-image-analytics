@@ -1,56 +1,107 @@
 # Real-Time Image Analytics Pipeline
 
+## Table of Contents
+
+* [Overview](#overview)
+* [Core Technologies](#core-technologies)
+* [Project Directory Structure](#project-directory-structure)
+* [Detailed Workflow](#detailed-workflow)
+* [Cloud Services Setup (Infrastructure Docker Stack)](#cloud-services-setup-infrastructure-docker-stack)
+    * [Services](#services)
+    * [Prerequisites (Cloud Server)](#prerequisites-cloud-server)
+    * [Setup & Run (Cloud Server)](#setup--run-cloud-server)
+* [Component Setup (Local Development/Execution)](#component-setup-local-developmentexecution)
+    * [General Prerequisites](#general-prerequisites)
+    * [Cloning](#cloning)
+    * [Environment Variables (.env)](#environment-variables-env)
+    * [Producer Setup](#producer-setup)
+    * [Consumer Setup](#consumer-setup)
+    * [Hadoop Setup](#hadoop-setup)
+    * [Elasticsearch Indexer Setup](#elasticsearch-indexer-setup)
+    * [Simple Frontend (Flask App) Setup](#simple-frontend-flask-app-setup)
+* [Running the Full Pipeline](#running-the-full-pipeline)
+* [Accessing Services](#accessing-services)
+* [Troubleshooting](#troubleshooting)
+* [Future Improvements](#future-improvements)
+
 ## Overview
 
-This project implements a pipeline for ingesting images, performing real-time object detection, storing processing metadata, and visualizing results. The system uses Kafka for message streaming, OpenCV for image processing (YOLOv4-tiny object detection), S3-compatible storage (Hetzner Object Storage) for images and metadata, and a Remix frontend for displaying information. The entire backend infrastructure is intended to run on Hetzner Cloud.
+This project implements a pipeline for ingesting images, performing real-time object detection, storing raw metadata, aggregating results using Hadoop MapReduce, indexing the aggregated data into Elasticsearch, and visualizing analytics via a Flask-based web dashboard.
 
-*(Note: The original project description mentioned potential Hadoop/Elasticsearch components for batch processing and advanced indexing; these are not yet implemented in the current producer/consumer structure but could be future additions.)*
+The system utilizes Apache Kafka for streaming, S3-compatible storage (Hetzner) for persistence, OpenCV/YOLOv4-tiny for detection, Hadoop MapReduce for aggregation, Elasticsearch for indexing aggregated data, and Python/Flask for backend processing and serving the frontend dashboard. Infrastructure services (Kafka, ES, Hadoop UI, Traefik proxy) are managed via Docker Compose.
 
 ## Core Technologies
 
-* **Message Streaming:** Apache Kafka
-* **Object Storage:** S3-Compatible (Hetzner Object Storage via `boto3`)
-* **Image Processing:** Python, OpenCV (DNN Module with YOLOv4-tiny)
-* **Backend:** Python (`kafka-python`, `boto3`, `opencv-python`, `watchdog`, `python-dotenv`)
-* **Frontend:** Remix (React framework)
-* **Infrastructure:** Hetzner Cloud (intended deployment)
+* **Streaming:** Apache Kafka
+* **Storage:** S3-Compatible Object Storage (Hetzner)
+* **Processing:** Python, OpenCV (DNN/YOLOv4-tiny)
+* **Aggregation:** Hadoop MapReduce (Python scripts via Hadoop Streaming assumed)
+* **Indexing/Querying:** Elasticsearch
+* **API/Frontend:** Flask, Chart.js, Moment.js
+* **Infrastructure:** Docker, Docker Compose, Traefik, Hetzner Cloud (Target)
 
-## Cloud Services Setup (Kafka, Traefik, Elasticsearch, Hadoop)
+## Project Directory Structure
 
-This project includes a cloud-ready Docker stack to support streaming, analytics, and infrastructure services required for the real-time image analytics pipeline. It is designed to run on a Hetzner Cloud instance with custom domain routing and HTTPS via **Traefik + ACME (Let’s Encrypt)**.
-
-**The docker.compose.yml can be found in cloud-services folder in the project**
-
-### Services Included
-* **Treafik:** Reverse proxy and HTTPS termination for services like Kafka, Elasticsearch, Hadoop
-* **Kafka:** Secure Kafka broker with SASL/PLAIN auth (JAAS configured)
-* **Elasticsearch:** Fast metadata indexing and querying (with optional Basic Auth middleware)
-* **Hadoop:** Pseudo-distributed HDFS NameNode UI for batch processing preview
-
-### Cloud Directory Structure
-<pre>
+```
 .
-├── docker-compose.yml
-├── kafka-jaas/
-│   └── kafka_server_jaas.conf
-├── traefik/
-│   ├── traefik.yml
-│   ├── acme/             # volume for certs (Let’s Encrypt)
-│   └── auth/             # volume for basic-auth users file
-</pre>
+├── cloud-services/       # Docker Compose stack for infrastructure (Kafka, ES, etc.)
+│   ├── docker-compose.yml
+│   ├── kafka-jaas/       # Kafka JAAS configuration
+│   └── traefik/          # Traefik configuration, certs, auth
+├── consumer/             # Kafka consumer, performs object detection
+│   ├── helpers/          # Helper scripts (e.g., model download)
+│   ├── main_consumer.py
+│   ├── requirements.txt
+│   └── README.md         # Consumer-specific details
+├── elasticsearch/        # Elasticsearch indexer script
+│   ├── index_hadoop_output.py # Indexes aggregated Hadoop output from S3
+│   ├── requirements.txt
+│   └── README.md         # Indexer-specific details
+├── hadoop/               # Hadoop MapReduce code (Python scripts for streaming)
+│   ├── mapper.py         # Example mapper script
+│   ├── reducer.py        # Example reducer script
+│   └── README.md         # Hadoop component details
+├── producer/             # Image ingestion producer
+│   ├── helpers/          # Helper scripts (e.g., image preprocessing)
+│   ├── new_pics/         # Input directory for unprocessed images
+│   ├── extracted_frames/ # Directory for processed/resized images
+│   ├── main_producer.py
+│   ├── requirements.txt
+│   └── README.md         # Producer-specific details
+├── simple_frontend/      # Flask application serving API and dashboard
+│   ├── app.py            # Flask application code
+│   ├── templates/        # HTML template(s)
+│   │   └── index.html
+│   ├── static/           # CSS/JS assets
+│   │   ├── script.js
+│   │   └── style.css
+│   ├── requirements.txt
+│   └── README.md         # Flask app details
+└── README.md             # This file: Main project overview
+```
 
+## Detailed Workflow
 
-### Security
-* Kafka uses **JAAS** with **SASL/PLAIN** for secure inter-broker and client connections.
-* Traefik automatically provisions **SSL certificates via Let’s Encrypt** using the websecure entry point.
-* **Basic Auth** is applied to UI services like Elasticsearch and Hadoop using a mounted users file (auth/usersfile).
+1. **Image Preparation:** Images placed in `producer/new_pics/` are optionally pre-processed into `producer/extracted_frames/`.
+2. **Producer (`producer/`):** Uploads new images from `extracted_frames/` to S3 (`images/` prefix) and sends the S3 `image_path` to a Kafka topic.
+3. **Kafka:** Buffers `image_path` messages.
+4. **Consumer (`consumer/`):** Reads messages, downloads images, runs YOLO detection, generates raw JSON metadata, uploads metadata to S3 (`metadata/` prefix).
+5. **Aggregation (`hadoop/`):** A Hadoop MapReduce job (using scripts like `mapper.py`, `reducer.py`) runs as a batch process. It reads raw JSON metadata from S3 (`metadata/` prefix), aggregates counts per label per time interval, and writes summarized results as text files (`part-xxxxx`) to an S3 output prefix (e.g., `s3://YOUR_S3_BUCKET_NAME/mapreduce-output/`).
+6. **Elasticsearch Indexing (`elasticsearch/`):** `index_hadoop_output.py` reads the aggregated Hadoop output files (from step 5) from its configured S3 prefix and indexes the summarized counts into the `hadoop-object-counts-v1` Elasticsearch index. This is run *after* the Hadoop job completes.
+7. **API & Frontend Serving (`simple_frontend/`):** The Flask application (`app.py`) serves both:
+    * API endpoints (`/api/...`) that query the `hadoop-object-counts-v1` index in Elasticsearch.
+    * The HTML dashboard (`/`) which uses JavaScript (`static/script.js`) to call the API endpoints and display charts.
 
-### Domain Routing via Traefik
-* https://kafka.spacerra.com -> Kafka clients onlty, not web
-* https://elastic.spacerra.com -> Elasticsearch REST & UI
-* https://hadoop.spacerra.com -> HDFS NameNode UI
+## Cloud Services Setup (Infrastructure Docker Stack)
 
-### Required System Packages (Install with apt)
+### Services
+
+* **Traefik:** Reverse proxy & Let's Encrypt HTTPS (`https://*.YOUR_DOMAIN.COM`).
+* **Kafka:** Secure broker (`kafka.YOUR_DOMAIN.COM`) using SASL/PLAIN.
+* **Elasticsearch:** Indexing service (`https://elastic.YOUR_DOMAIN.COM`) with Basic Auth.
+* **Hadoop:** HDFS NameNode UI (`https://hadoop.YOUR_DOMAIN.COM`) with Basic Auth.
+
+### Prerequisites (Cloud Server)
 
 ```bash
 sudo apt update && sudo apt install -y \
@@ -61,183 +112,137 @@ sudo apt update && sudo apt install -y \
   net-tools
 ```
 
-### Setup & Run
+### Setup & Run (Cloud Server)
 
-1. **Prepare TLS volume:**
+1. **Navigate to directory:**
+    ```bash
+    cd cloud-services
+    ```
+2. **Prepare Traefik Volumes:**
+    ```bash
+    mkdir -p traefik/acme traefik/auth
+    chmod 600 traefik/acme
+    ```
+3. **Create Basic Auth File:**
+    ```bash
+    htpasswd -nb YOUR_ADMIN_USERNAME YOUR_ADMIN_PASSWORD > traefik/auth/usersfile
+    ```
+4. **Create Kafka JAAS Config:**
+    ```bash
+    mkdir -p kafka-jaas
+    nano kafka-jaas/kafka_server_jaas.conf
+    ```
+    Paste content:
+    ```apacheconf
+    KafkaServer {
+      org.apache.kafka.common.security.plain.PlainLoginModule required
+      username="YOUR_KAFKA_USERNAME"
+      password="YOUR_KAFKA_PASSWORD"
+      user_admin="YOUR_KAFKA_PASSWORD";
+    };
+    ```
+5. **Configure `docker-compose.yml` & `traefik/traefik.yml`:** Update domain names.
+6. **Launch Stack:**
+    ```bash
+    docker-compose up -d --build
+    ```
+7. **Monitor:**
+    ```bash
+    docker-compose logs -f
+    ```
 
-```bash
-mkdir -p traefik/acme
-chmod 600 traefik/acme
-```
+## Component Setup (Local Development/Execution)
 
-2. **Create Basic Auth File:**
+### General Prerequisites
 
-```bash
-mkdir -p traefik/auth
-htpasswd -nb admin yourpassword > traefik/auth/usersfile
-```
+* Git
+* Python 3.8+ & Pip
+* Docker & Docker Compose
+* Access credentials for S3, Kafka, Elasticsearch.
 
-3. **Create Kafka JAAS Config:**
+### Cloning
 
-```bash
-mkdir -p kafka-jaas
-nano kafka-jaas/kafka_server_jaas.conf
-```
-
-Paste this content:
-
-```apacheconf
-KafkaServer {
-  org.apache.kafka.common.security.plain.PlainLoginModule required
-  username="your_username"
-  password="your_password"
-  user_admin="your_password";
-};
-```
-
-4. **Launch stack:**
-
-```bash
-docker-compose up -d --build
-```
-
-## Project Directory Structure 
-
-* **`/producer`**: Contains scripts related to image ingestion.
-    * Takes local images (from `producer/new_pics/` or `producer/extracted_frames/`).
-    * Uploads images to the S3 `images/` prefix.
-    * Sends initial metadata (S3 path) to the Kafka topic.
-    * Can run in batch or continuous monitoring mode.
-    * See `producer/README.md` for details.
-* **`/consumer`**: Contains the application that processes images based on Kafka messages.
-    * Subscribes to the Kafka topic.
-    * Downloads images from S3 based on received paths.
-    * Performs object detection using OpenCV/YOLOv4-tiny.
-    * Uploads resulting JSON metadata to the S3 `metadata/` prefix.
-    * Runs continuously.
-    * See `consumer/README.md` for details.
-* **`/frontend`**: Contains the Remix web application for visualization.
-    * Queries backend services (likely an API layer interacting with S3 metadata or Elasticsearch in a future iteration) to display processing results.
-    * See `frontend/README.md` (or standard Remix project docs) for details.
-* **`/cloud-services`**: Contains a copy of docker-compose.yml that is used to build the services stack on our external cloud server.
-
-## Workflow
-
-1.  **Image Preparation (Manual/Helper):** New images are placed in `producer/new_pics/`. The `producer/helpers/process_new_images.py` script resizes them and moves them to `producer/extracted_frames/` with sequential names (`frame_XXXXXX.jpg`).
-2.  **Producer:** `producer/main_producer.py` (in either mode) detects images in `producer/extracted_frames/`. If an image is not already in the S3 `images/` prefix (checked via S3 listing or `head_object`), it uploads the image and sends a message containing the `image_path` to the Kafka topic.
-3.  **Kafka:** Acts as a buffer, holding the `image_path` messages.
-4.  **Consumer:** `consumer/main_consumer.py` listens to the Kafka topic. For each message:
-    * Downloads the image from the specified S3 `image_path`.
-    * Performs object detection.
-    * Generates a JSON metadata report.
-    * Uploads the JSON report to the S3 `metadata/` prefix (e.g., `metadata/frame_XXXXXX.json`).
-    * Commits the Kafka offset to mark the message as processed.
-5.  **Frontend (Conceptual):** The Remix frontend queries the stored metadata (currently in S3 `metadata/`, potentially Elasticsearch later) to display results (e.g., detected objects per image, counts, etc.).
-
-## General Setup
-
-**(Refer to component READMEs for specific commands)**
-
-1.  **Clone Repository:** Get the code.
 ```bash
 git clone https://github.com/ibu-fenms512/2025-group19.git
-```
-```bash
-git clone git@github.com:ibu-fenms512/2025-group19.git
-```
-```bash
-gh repo clone ibu-fenms512/2025-group19
+cd 2025-group19
 ```
 
-2.  **Backend Setup (`producer` & `consumer`):**
-    * Navigate into each directory (`cd producer`, `cd consumer`).
-    * Create a Python virtual environment (`python -m venv venv`).
-    * Activate the environment (`source venv/bin/activate` or `.\venv\Scripts\activate`).
-    * Install dependencies (`pip install -r requirements.txt`).
-    * Create a `.env` file in *each* directory and add the required credentials (Hetzner S3 keys, Kafka password). **Ensure `.env` files are in your root `.gitignore`!**
-    * **Crucially for Consumer:** Run `python helpers/download_models.py` inside the `consumer` directory (with venv active) to download the YOLO model files.
+### Environment Variables (`.env`)
 
-```bash
-cd producer  # or cd consumer
+Create `.env` files in component roots. Do not commit these files.
 
-# Create a virtual environment
-python3 -m venv venv
+* For `producer`, `consumer`, `elasticsearch`, `simple_frontend`, define credentials, URLs, and topics accordingly.
 
-# Activate the virtual environment
-source venv/bin/activate  # for Linux/macOS
-# .\venv\Scripts\activate  # for Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create and configure your .env file
-touch .env  # or cp .env.example .env (if available)
-
-# Add the following to your .env:
-# AWS_ACCESS_KEY_ID=your_hetzner_key
-# AWS_SECRET_ACCESS_KEY=your_hetzner_secret
-# KAFKA_USERNAME=admin
-# KAFKA_PASSWORD=your_password
-```
-**Consumer only: Run this to download YOLO model files:**
-```bash
-python helpers/download_models.py
-```
-3.  **Frontend Setup:**
-    * Navigate into the `frontend` directory (`cd frontend`).
-    * Install Node.js dependencies (e.g., `npm install` or `yarn install`).
-    * Configure frontend environment variables if needed (see `frontend/README.md`).
-
-```bash
-cd frontend
-
-# Install Node.js dependencies
-npm install  # or yarn install
-
-# Configure environment variables if needed
-touch .env  # or cp .env.example .env
-```
-
-## Running the Pipeline
-
-**(Ensure Kafka & S3 are accessible)**
-
-1.  **Start Consumer:**
-    * Navigate to the `consumer` directory.
-    * Activate the venv.
-    * Run: `python main_consumer.py`
-    * Leave it running (it waits for messages).
-
-```bash
-cd consumer
-source venv/bin/activate
-python main_consumer.py
-```
-2.  **Start Producer:**
-    * Navigate to the `producer` directory.
-    * Activate the venv.
-    * Ensure `RUN_CONTINUOUSLY` flag in `main_producer.py` is set as desired (True/False).
-    * Add images to `producer/new_pics/` and run `python helpers/process_new_images.py` to prepare them, OR place images directly in `producer/extracted_frames/` if pre-processed.
-    * Run: `python main_producer.py`
-    * (If continuous, leave it running. If batch, it will process new files and exit).
+### Producer Setup
 
 ```bash
 cd producer
+python3 -m venv venv
 source venv/bin/activate
-
-# Optionally preprocess images
-python helpers/process_new_images.py
-
-# Then run the producer
-python main_producer.py
+pip install -r requirements.txt
 ```
-3.  **Start Frontend:**
-    * Navigate to the `frontend` directory.
-    * Run the development server (e.g., `npm run dev` or `yarn dev`).
-    * Access the frontend in your browser.
+
+### Consumer Setup
+
 ```bash
-cd frontend
-npm run dev  # or yarn dev
+cd consumer
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python helpers/download_models.py
 ```
 
-*This README last updated around: Thursday, April 10, 2025.*
+### Hadoop Setup
+
+Requires functional Hadoop installation. Scripts are executed via streaming jobs.
+
+### Elasticsearch Indexer Setup
+
+```bash
+cd elasticsearch
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Simple Frontend Setup
+
+```bash
+cd simple_frontend
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+## Running the Full Pipeline
+
+1. Start cloud infrastructure (or local docker stack).
+2. Start the Kafka consumer.
+3. Run the image producer.
+4. Run Hadoop aggregation job.
+5. Run Elasticsearch indexer script.
+6. Start Flask web app.
+
+## Accessing Services
+
+* Kafka: kafka.YOUR_DOMAIN.COM:9093
+* Elasticsearch: https://elastic.YOUR_DOMAIN.COM
+* Hadoop UI: https://hadoop.YOUR_DOMAIN.COM
+* Flask API: http://127.0.0.1:5001
+
+## Troubleshooting
+
+* Validate credentials and URLs in `.env`
+* Use `docker-compose logs` to debug cloud stack
+* Check Flask logs and browser console for frontend issues
+
+## Future Improvements
+
+* Automate the Hadoop step
+* Improve frontend UX and query flexibility
+* Harden security and TLS handling
+
+---
+
+*README Last Updated: April 14, 2025*
+
