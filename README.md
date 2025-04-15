@@ -42,7 +42,7 @@ The system utilizes Apache Kafka for streaming, S3-compatible storage (Hetzner) 
 
 ## Project Directory Structure
 
-<pre>
+```bash
 │
 ├── cloud-services/       # Docker Compose stack for infrastructure (Kafka, ES, etc.)
 │   ├── docker-compose.yml
@@ -78,7 +78,7 @@ The system utilizes Apache Kafka for streaming, S3-compatible storage (Hetzner) 
 │   ├── requirements.txt
 │   └── README.md         # Flask app details
 └── README.md             # This file: Main project overview
-</pre>
+```
 
 ## Detailed Workflow
 
