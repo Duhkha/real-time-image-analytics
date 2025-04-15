@@ -43,7 +43,7 @@ The system utilizes Apache Kafka for streaming, S3-compatible storage (Hetzner) 
 ## Project Directory Structure
 
 <pre>
-.
+│
 ├── cloud-services/       # Docker Compose stack for infrastructure (Kafka, ES, etc.)
 │   ├── docker-compose.yml
 │   ├── kafka-jaas/       # Kafka JAAS configuration
@@ -163,8 +163,8 @@ sudo apt update && sudo apt install -y \
 ### Cloning
 
 ```bash
-git clone https://github.com/ibu-fenms512/2025-group19.git
-cd 2025-group19
+git clone https://github.com/Duhkha/real-time-image-analytics.git
+cd real-time-image-analytics
 ```
 
 ### Environment Variables (`.env`)
