@@ -73,6 +73,20 @@ try:
     else:
         print("Output directory is empty.")
 
+    part_file_to_check = f"{OUTPUT_S3_PREFIX}part-00001"
+    print(f"\nReading specific part file: '{part_file_to_check}' ...")
+    try:
+        obj_response = s3_client.get_object(
+            Bucket=S3_BUCKET_NAME,
+            Key=part_file_to_check
+        )
+        content = obj_response['Body'].read().decode('utf-8')
+        print("\n--- First 4000 characters of part-00001 ---")
+        print(content[:4000])
+        obj_response['Body'].close()
+    except ClientError as e:
+        print(f"Error reading part-00000: {e}")
+
 except ClientError as e:
     print(f"Error listing objects: {e}")
     sys.exit(1)

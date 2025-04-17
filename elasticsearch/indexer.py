@@ -1,18 +1,16 @@
-# index_hadoop_output.py
 import os
 import sys
 import json
 import datetime
-import warnings # Import the warnings module
+import warnings 
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 from elasticsearch.exceptions import RequestError, ConnectionError, NotFoundError
-# import ast # Not currently needed as the timestamp list isn't parsed
-from datetime import datetime as dt # Alias for clarity
-from typing import Iterator, Dict, Any, Optional, Tuple # For type hinting
+from datetime import datetime as dt 
+from typing import Iterator, Dict, Any, Optional, Tuple 
 
 # --- Configuration ---
 load_dotenv()
@@ -21,28 +19,21 @@ print("Loaded environment variables.")
 # S3 Configuration
 S3_ACCESS_KEY: Optional[str] = os.environ.get('HETZNER_S3_ACCESS_KEY')
 S3_SECRET_KEY: Optional[str] = os.environ.get('HETZNER_S3_SECRET_KEY')
-S3_ENDPOINT_URL: str = os.environ.get('S3_ENDPOINT_URL', "https://nbg1.your-objectstorage.com") # Your endpoint
+S3_ENDPOINT_URL: str = os.environ.get('S3_ENDPOINT_URL', "https://nbg1.your-objectstorage.com")
 S3_BUCKET_NAME: str = os.environ.get('S3_BUCKET_NAME', "2025-group19")
-# --- Point to your Hadoop output prefix ---
-# Adjust this path as needed (e.g., for sample-2k or full output)
-S3_HADOOP_OUTPUT_PREFIX: str = "mapreduce-output/sample-object-counts-2k/"
+S3_HADOOP_OUTPUT_PREFIX: str = "mapreduce-output/object-counts/"
 
 # Elasticsearch Configuration
 ES_HOST_URL: str = os.environ.get('ES_HOST_URL', 'https://elastic.spacerra.com')
 ES_USERNAME: str = os.environ.get('ES_USERNAME', 'admin')
-ES_PASSWORD: Optional[str] = os.environ.get('ES_PASSWORD') # Must be in .env
-# --- Index name for Hadoop results ---
-ES_HADOOP_INDEX_NAME: str = "hadoop-object-counts-v1"
+ES_PASSWORD: Optional[str] = os.environ.get('ES_PASSWORD') 
+ES_HADOOP_INDEX_NAME: str = "hadoop-object-counts"
 
 # Indexing Control
-BATCH_SIZE: int = 500 # How many docs to send in one bulk request
-REQUEST_TIMEOUT_SECONDS: int = 120 # Timeout for Elasticsearch bulk requests
-# --- Set this for testing if needed ---
-MAX_FILES_TO_PROCESS: Optional[int] = None # Set to None to process all part-* files under the prefix
+BATCH_SIZE: int = 500 
+REQUEST_TIMEOUT_SECONDS: int = 120 
+MAX_FILES_TO_PROCESS: Optional[int] = None 
 
-# --- Suppress only the InsecureRequestWarning from urllib3 ---
-# WARNING: Disabling certificate verification is insecure. Use only if you understand the risks.
-# Consider using `ca_certs='/path/to/your/ca.crt'` in Elasticsearch client instead.
 try:
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -58,12 +49,11 @@ def create_es_client() -> Elasticsearch:
         sys.exit(1)
     try:
         print(f"Connecting to Elasticsearch at {ES_HOST_URL}...")
-        # WARNING: verify_certs=False is insecure. Use ca_certs='/path/to/ca.crt' for production.
         client = Elasticsearch(
             [ES_HOST_URL],
             basic_auth=(ES_USERNAME, ES_PASSWORD),
-            verify_certs=False, # This causes SecurityWarning but warning is suppressed above
-            request_timeout=30 # Standard timeout for connection check
+            verify_certs=False, 
+            request_timeout=30 
         )
         if not client.ping():
             raise ConnectionError("Ping failed. Check connection and credentials.")
@@ -88,8 +78,6 @@ def create_s3_client() -> boto3.client:
             aws_access_key_id=S3_ACCESS_KEY,
             aws_secret_access_key=S3_SECRET_KEY
         )
-        # Optional: Test connection if needed, e.g., list buckets (might need permissions)
-        # s3.list_buckets()
         print("Successfully created S3 client.")
         return s3
     except Exception as e:
@@ -101,11 +89,10 @@ def create_index_if_not_exists(es_client: Elasticsearch, index_name: str, index_
     try:
         if not es_client.indices.exists(index=index_name):
             print(f"Creating index '{index_name}'...")
-            # Use specific settings for non-production if needed, e.g., no replicas
             index_settings = {
                 "index": {
                     "number_of_shards": 1,
-                    "number_of_replicas": 0 # Set to 0 for single-node dev clusters
+                    "number_of_replicas": 0 
                 }
             }
             es_client.indices.create(
@@ -117,12 +104,10 @@ def create_index_if_not_exists(es_client: Elasticsearch, index_name: str, index_
         else:
             print(f"Index '{index_name}' already exists.")
     except RequestError as e:
-        # If error is 'resource_already_exists_exception', it's likely a race condition, ignore.
         if e.error == 'resource_already_exists_exception':
              print(f"Index '{index_name}' likely created by concurrent process.")
         else:
             print(f"Error checking/creating index '{index_name}' (RequestError): {e.info}", file=sys.stderr)
-            # Double check existence after error
             if not es_client.indices.exists(index=index_name):
                  print(f"Exiting: index '{index_name}' could not be created.", file=sys.stderr)
                  sys.exit(1)
@@ -135,68 +120,58 @@ def generate_hadoop_actions(s3_client: boto3.client) -> Iterator[Dict[str, Any]]
     processed_files_count = 0
     total_actions_yielded = 0
     paginator = s3_client.get_paginator('list_objects_v2')
-    # Ensure prefix ends with '/' for proper directory listing
     s3_prefix = S3_HADOOP_OUTPUT_PREFIX if S3_HADOOP_OUTPUT_PREFIX.endswith('/') else S3_HADOOP_OUTPUT_PREFIX + '/'
 
     print(f"Starting S3 iteration under: s3://{S3_BUCKET_NAME}/{s3_prefix}")
     try:
         for page in paginator.paginate(Bucket=S3_BUCKET_NAME, Prefix=s3_prefix):
             if 'Contents' not in page:
-                continue # Skip empty pages
+                continue 
 
             for obj in page['Contents']:
                 s3_key = obj['Key']
-                # Skip the prefix itself (directory object) and empty files or non-part files
                 if s3_key == s3_prefix or obj['Size'] == 0 or not os.path.basename(s3_key).startswith('part-'):
                     continue
 
-                # Check MAX_FILES_TO_PROCESS limit
                 if MAX_FILES_TO_PROCESS is not None and processed_files_count >= MAX_FILES_TO_PROCESS:
                     print(f"Reached MAX_FILES_TO_PROCESS limit ({MAX_FILES_TO_PROCESS}). Stopping S3 iteration.")
-                    return # Stop the generator
+                    return 
 
                 print(f"  Processing S3 file: {s3_key}")
                 try:
                     response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
-                    # Read the body and decode immediately
                     content_string = response['Body'].read().decode('utf-8')
-                    response['Body'].close() # Ensure stream is closed
+                    response['Body'].close() 
 
                     lines_in_file = 0
                     for line in content_string.splitlines():
-                        if not line.strip(): continue # Skip empty lines
+                        if not line.strip(): continue 
 
                         try:
-                            # Expected format: key_part\tcount_str\ttimestamps_str
                             parts = line.split('\t')
                             if len(parts) != 3:
                                 print(f"Warning: Skipping line in {s3_key} due to unexpected parts count ({len(parts)}). Line: {line[:100]}...", file=sys.stderr)
                                 continue
 
-                            key_part, count_str, timestamps_str = parts # Note: timestamps_str is not used below
+                            key_part, count_str, timestamps_str = parts
 
-                            # Expected key_part format: label@YYYY-MM-DD HH:MM
                             key_parts = key_part.split('@')
                             if len(key_parts) != 2:
                                 print(f"Warning: Skipping line in {s3_key} due to unexpected key format. Key: {key_part}. Line: {line[:100]}...", file=sys.stderr)
                                 continue
 
                             label, time_bucket_str = key_parts
-                            count = int(count_str) # Can raise ValueError
-                            # Parse time bucket string
-                            time_bucket_dt = dt.strptime(time_bucket_str, '%Y-%m-%d %H:%M') # Can raise ValueError
-                            time_bucket_iso = time_bucket_dt.isoformat() # Convert to ISO format for ES
+                            count = int(count_str) 
+                            time_bucket_dt = dt.strptime(time_bucket_str, '%Y-%m-%d %H:%M') 
+                            time_bucket_iso = time_bucket_dt.isoformat() 
 
-                            # Create the document for Elasticsearch
                             doc = {
                                 "label": label,
-                                "time_bucket": time_bucket_iso, # Aggregated time bucket
+                                "time_bucket": time_bucket_iso,
                                 "count": count,
-                                "@timestamp": time_bucket_iso, # Use aggregated time for @timestamp
+                                "@timestamp": time_bucket_iso, 
                                 "s3_source_file": os.path.basename(s3_key)
-                                # The 'timestamps_str' (list of individual times) is available but not indexed
                             }
-                            # Yield the bulk action
                             action = {
                                 "_index": ES_HADOOP_INDEX_NAME,
                                 "_source": doc
@@ -222,7 +197,6 @@ def generate_hadoop_actions(s3_client: boto3.client) -> Iterator[Dict[str, Any]]
 
     except ClientError as e:
         print(f"FATAL: Error listing S3 objects under s3://{S3_BUCKET_NAME}/{s3_prefix}: {e}", file=sys.stderr)
-        # Decide if you want to exit or just stop yielding
         return
     except Exception as e_outer:
         print(f"FATAL: Unexpected error during S3 iteration: {e_outer}", file=sys.stderr)
@@ -235,38 +209,33 @@ def main():
     es = create_es_client()
     s3 = create_s3_client()
 
-    # Define mapping for the new Hadoop index
     hadoop_index_mapping = {
         "properties": {
-            "label": {"type": "keyword"}, # Use keyword for exact matching/aggregation
-            "time_bucket": {"type": "date"}, # Store as date type
+            "label": {"type": "keyword"}, 
+            "time_bucket": {"type": "date"},
             "count": {"type": "integer"},
-            "@timestamp": {"type": "date"}, # Standard timestamp field
+            "@timestamp": {"type": "date"}, 
             "s3_source_file": {"type": "keyword"}
         }
     }
-    # Create the specific index for Hadoop output if it doesn't exist
     create_index_if_not_exists(es, ES_HADOOP_INDEX_NAME, hadoop_index_mapping)
 
     print(f"\nStarting bulk indexing of Hadoop output to index '{ES_HADOOP_INDEX_NAME}'...")
     success_count_reported = 0
     failed_count_reported = 0
-    processed_actions_count = 0 # Track expected format actions
+    processed_actions_count = 0 
 
     # --- Refined Bulk Processing Loop ---
     try:
-        # Use es.options() to set request_timeout - Corrected from DeprecationWarning
         bulk_client = es.options(request_timeout=REQUEST_TIMEOUT_SECONDS)
 
-        # Iterate through results from the bulk helper
-        for item in bulk(client=bulk_client, # Use the client with options
+        for item in bulk(client=bulk_client, 
                          actions=generate_hadoop_actions(s3),
                          chunk_size=BATCH_SIZE,
-                         raise_on_error=False, # Report errors individually
-                         raise_on_exception=False # Report exceptions individually
+                         raise_on_error=False, 
+                         raise_on_exception=False 
                         ):
 
-            # The standard return format when raise_on_error=False is a tuple
             if isinstance(item, tuple) and len(item) == 2:
                 processed_actions_count += 1
                 ok, action_info = item
@@ -276,7 +245,6 @@ def main():
                     failed_count_reported += 1
                     error_details = "Unknown error"
                     if isinstance(action_info, dict):
-                        # Find the action type key (e.g., 'index', 'create', 'delete')
                         action_type = next(iter(action_info), None)
                         if action_type:
                             error_details = action_info.get(action_type, {}).get('error', "No error details in dict")
@@ -286,24 +254,18 @@ def main():
                          error_details = f"Non-dict error info: {action_info!r}"
                     print(f"WARN: Failed action info: {error_details}", file=sys.stderr)
 
-            # Handling observed anomalies from the user's output log
             elif isinstance(item, int):
                  print(f"WARN: Bulk helper yielded integer ({item}). Assuming summary count. Relying on final ES count check.", file=sys.stderr)
-                 # Don't increment failure count based on this anomaly
             elif isinstance(item, list) and not item:
                  print(f"WARN: Bulk helper yielded empty list. Ignoring. Relying on final ES count check.", file=sys.stderr)
-                 # Don't increment failure count based on this anomaly
             else:
-                 # Genuinely unexpected item format from bulk helper
                  print(f"ERROR: Truly unexpected item format received from bulk helper: {item!r}", file=sys.stderr)
-                 failed_count_reported += 1 # Count this specific anomaly as a failure for reporting
+                 failed_count_reported += 1 
 
-            # Print progress periodically based on processed actions (tuples mainly)
             if processed_actions_count > 0 and processed_actions_count % (BATCH_SIZE * 5) == 0: # Print less often
                  print(f"  Processed ~{processed_actions_count} actions ({success_count_reported} reported success, {failed_count_reported} reported failures)...")
 
     except Exception as e:
-        # Catch errors during the bulk call itself (e.g., connection timeouts not handled by individual errors)
         print(f"\nFATAL: An error occurred during bulk execution: {e}", file=sys.stderr)
     finally:
         print(f"\n--- Hadoop Output Indexing Finished ---")
@@ -311,15 +273,11 @@ def main():
         print(f"Reported success count (from loop): {success_count_reported}")
         print(f"Reported failure count (from loop/anomalies): {failed_count_reported}")
 
-        # --- Final Verification ---
-        # Always refresh and check the count directly in Elasticsearch as the most reliable measure
         try:
             print("Refreshing index...")
-            # CORRECTED: Use .options() for refresh timeout
             es.options(request_timeout=60).indices.refresh(index=ES_HADOOP_INDEX_NAME)
 
             print("Checking final document count in Elasticsearch...")
-            # CORRECTED: Use .options() for count timeout
             final_count_info = es.options(request_timeout=60).count(index=ES_HADOOP_INDEX_NAME)
 
             final_count = final_count_info.get('count', 'N/A')
@@ -329,7 +287,6 @@ def main():
             print(f"ERROR: Index '{ES_HADOOP_INDEX_NAME}' not found after indexing attempt.", file=sys.stderr)
         except Exception as e_count:
             print(f"ERROR: Could not verify final count in index '{ES_HADOOP_INDEX_NAME}': {e_count}", file=sys.stderr)
-    # --- END Refined Bulk Processing Loop ---
 
 if __name__ == "__main__":
     main()

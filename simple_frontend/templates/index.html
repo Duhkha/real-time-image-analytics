@@ -12,11 +12,11 @@
 <body>
     <header>
         <h1>Image Detection Dashboard</h1>
-        <p style="color:#ddd;">Showing data for: {{ display_date or '2025-04-10' }} (17:00-20:00 UTC)</p>
+        <p style="color:#ddd;">Showing data for: {{ display_date or '2025-04-10' }} (19:00-22:00 UTC)</p>
     </header>
 
     <section class="metrics">
-        <h2>Detections Summary ({{ display_date or 'Fixed Date' }} 17:00-20:00 UTC)</h2>
+        <h2>Detections Summary ({{ display_date or 'Fixed Date' }} 19:00-22:00 UTC)</h2>
         <div class="controls">
             <label for="labelSelectorTotal">Show total for:</label>
             <select id="labelSelectorTotal">
@@ -42,18 +42,18 @@
     </section>
 
     <section class="chart-container">
-        <h2>Overall Detection Counts ({{ display_date or 'Fixed Date' }} 17:00-20:00 UTC, Top 15)</h2>
+        <h2>Overall Detection Counts ({{ display_date or 'Fixed Date' }} 19:00-22:00 UTC, Top 15)</h2>
         <div>
             <canvas id="labelChart"></canvas>
         </div>
     </section>
 
     <section class="chart-container">
-         <h2>Detections Over Time (Top 15 Labels, {{ display_date or 'Fixed Date' }} 17:00-20:00 UTC, 15min intervals)</h2>
-         <div>
-            <canvas id="timelineChart"></canvas>
-        </div>
-    </section>
+        <h2>Detections Over Time (Top 15 Labels, {{ display_date or 'Fixed Date' }} 19:00-22:00 UTC, 1h intervals)</h2>
+        <div>
+           <canvas id="timelineChart"></canvas>
+       </div>
+   </section>
 
     <footer>
         <p>Real-Time Analytics Pipeline</p>

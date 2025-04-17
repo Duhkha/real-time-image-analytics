@@ -68,62 +68,54 @@ async function fetchAndDisplayTimelineChart(labelsToPlot) {
     console.log(`Workspaceing timeline data for labels: ${labelsToPlot.join(', ')}`);
     const ctx = canvas.getContext('2d');
     const lineColors = [ 'rgba(255, 99, 132, 0.8)', 'rgba(54, 162, 235, 0.8)', 'rgba(255, 206, 86, 0.8)', 'rgba(75, 192, 192, 0.8)', 'rgba(153, 102, 255, 0.8)', 'rgba(255, 159, 64, 0.8)' ];
-
+    const fixedTimeLabels = ["19:00", "20:00", "21:00", "22:00"];
     try {
         const params = new URLSearchParams();
         labelsToPlot.forEach(label => params.append('label', label));
-        params.append('interval', '15m');
         const apiUrl = `${API_BASE_URL}/api/timeline?${params.toString()}`;
 
         const data = await fetchData(apiUrl); 
 
         const datasets = [];
-        let timeLabels = []; 
         let colorIndex = 0;
-        let firstLabelProcessed = false;
 
         for (const label of labelsToPlot) {
+            const hourToCount = {};
             if (data.hasOwnProperty(label) && Array.isArray(data[label])) {
-                 const counts = data[label].map(point => point.y);
-
-                 if (!firstLabelProcessed && data[label].length > 0) {
-                     timeLabels = data[label].map(point => {
-                         try { return new Date(point.t).toLocaleTimeString([], { hour: '2-digit', minute:'2-digit', hour12: false }); } catch(e) { return point.t; }
-                     });
-                     firstLabelProcessed = true;
-                 }
-
-                 datasets.push({
-                     label: label, data: counts,
-                     borderColor: lineColors[colorIndex % lineColors.length],
-                     tension: 0.1, fill: false
-                 });
-                 colorIndex++;
-            } else {
-                console.warn(`No data returned from API for timeline label: ${label}`);
+                data[label].forEach(point => {
+                    const d = new Date(point.t);
+                    const hourStr = d.toLocaleTimeString([], { hour: '2-digit', minute:'2-digit', hour12: false });
+                    hourToCount[hourStr] = point.y;
+                });
             }
+            const counts = fixedTimeLabels.map(hour => hourToCount[hour] || 0);
+
+            datasets.push({
+                label: label, data: counts,
+                borderColor: lineColors[colorIndex % lineColors.length],
+                tension: 0.1, fill: false
+            });
+            colorIndex++;
         }
 
         if (timelineLineChart) { timelineLineChart.destroy(); }
 
-        timelineLineChart = new Chart(ctx, {
+        timelineLineChart = new Chart(canvas.getContext('2d'), {
             type: 'line',
-            data: { labels: timeLabels, datasets: datasets },
+            data: { labels: fixedTimeLabels, datasets: datasets },
             options: {
                 responsive: true,
                 scales: {
-                    x: { type: 'category', title: { display: true, text: 'Time Bucket (Category)' } },
+                    x: { type: 'category', title: { display: true, text: 'Hour (UTC)' } },
                     y: { beginAtZero: true, title: { display: true, text: 'Count' } }
                 },
-                 plugins: {
-                     legend: {
-                         position: 'top',
-                     },
-                     tooltip: { mode: 'index', intersect: false }
-                 }
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                }
             }
         });
-         console.log("Timeline chart created/updated for:", labelsToPlot.join(', '));
+        console.log("Timeline chart created/updated for:", labelsToPlot.join(', '));
 
     } catch (error) {
         console.error('Error fetching or displaying timeline chart:', error);
@@ -131,7 +123,6 @@ async function fetchAndDisplayTimelineChart(labelsToPlot) {
     }
 }
 
-// --- Initial Setup ---
 document.addEventListener('DOMContentLoaded', async () => { 
     console.log("DOM Loaded. Initializing dashboard...");
     const labelSelectorTotal = document.getElementById('labelSelectorTotal');

@@ -15,7 +15,7 @@ ENDPOINT_HOSTNAME = "nbg1.your-objectstorage.com"
 ENDPOINT_URL = f"https://{ENDPOINT_HOSTNAME}" 
 
 BUCKET_NAME = "2025-group19"
-S3_PREFIX = "images/"          
+S3_PREFIX = "mapreduce-output/"          
 MAX_ITEMS_TO_LIST = 10         
 
 # --- End Configuration ---

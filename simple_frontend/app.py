@@ -12,10 +12,10 @@ app = Flask(__name__)
 ES_HOST_URL = os.environ.get('ES_HOST_URL', 'https://elastic.spacerra.com')
 ES_USERNAME = os.environ.get('ES_USERNAME', 'admin')
 ES_PASSWORD = os.environ.get('ES_PASSWORD')
-ES_INDEX_NAME = "image-detections-v1"
+ES_INDEX_NAME = "hadoop-object-counts"
 FIXED_DATE = "2025-04-10"
-START_TIME_STR = f"{FIXED_DATE}T17:00:00Z"
-END_TIME_STR = f"{FIXED_DATE}T20:00:00Z"
+START_TIME_STR = f"{FIXED_DATE}T18:00:00Z"
+END_TIME_STR = f"{FIXED_DATE}T23:00:00Z"
 # --- End Configuration ---
 
 # --- ES Client ---
@@ -36,34 +36,61 @@ def home():
     """Serves the main HTML page."""
     return render_template('index.html', display_date=FIXED_DATE)
 
+
 @app.route('/api/count_specific')
 def count_specific_label():
-    """API endpoint to count detections of a specific label in the fixed date range."""
-    if not es_client: return jsonify({"error": "Elasticsearch connection not available"}), 500
+    """API endpoint to sum detections of a specific label in the fixed date range."""
+    if not es_client:
+        return jsonify({"error": "Elasticsearch connection not available"}), 500
     label_filter = request.args.get('label', default=None, type=str)
-    if not label_filter: return jsonify({"error": "Label parameter is required"}), 400
-    print(f"API: Querying count for fixed range: {START_TIME_STR} to {END_TIME_STR} for label '{label_filter}'")
-    query_body = {"bool":{"filter":[{"term":{"label":label_filter}},{"range":{"processing_timestamp":{"gte":START_TIME_STR,"lt":END_TIME_STR}}}]}}
+    if not label_filter:
+        return jsonify({"error": "Label parameter is required"}), 400
+    print(f"API: Querying SUM(count) for fixed range: {START_TIME_STR} to {END_TIME_STR} for label '{label_filter}'")
+    query_body = {
+        "bool": {
+            "filter": [
+                {"term": {"label": label_filter}},
+                {"range": {"time_bucket": {"gte": START_TIME_STR, "lt": END_TIME_STR}}}
+            ]
+        }
+    }
+    agg_body = {
+        "total_count": {"sum": {"field": "count"}}
+    }
     try:
-        response = es_client.count(index=ES_INDEX_NAME, query=query_body)
-        count = response.get('count', 0)
-        print(f"API: Count for label '{label_filter}' in fixed range: {count}")
-        return jsonify({"label": label_filter, "count_in_range": count})
+        response = es_client.search(index=ES_INDEX_NAME, query=query_body, size=0, aggregations=agg_body)
+        total = int(response.get('aggregations', {}).get('total_count', {}).get('value', 0))
+        print(f"API: SUM(count) for label '{label_filter}' in fixed range: {total}")
+        return jsonify({"label": label_filter, "count_in_range": total})
     except Exception as e:
         print(f"API Error during count query: {e}")
         return jsonify({"error": f"Error querying Elasticsearch: {e}"}), 500
 
 @app.route('/api/label_counts')
 def label_counts():
-    """API endpoint to get aggregate counts per label (fixed date range)."""
-    if not es_client: return jsonify({"error": "Elasticsearch connection not available"}), 500
-    query_body = {"bool":{"filter":[{"range":{"processing_timestamp":{"gte":START_TIME_STR,"lt":END_TIME_STR}}}]}}
-    agg_body = {"labels":{"terms":{"field":"label","size":15}}}
+    """API endpoint to get aggregate SUM(count) per label (fixed date range)."""
+    if not es_client:
+        return jsonify({"error": "Elasticsearch connection not available"}), 500
+    query_body = {
+        "bool": {
+            "filter": [
+                {"range": {"time_bucket": {"gte": START_TIME_STR, "lt": END_TIME_STR}}}
+            ]
+        }
+    }
+    agg_body = {
+        "labels": {
+            "terms": {"field": "label", "size": 15, "order": {"total_count": "desc"}},
+            "aggs": {
+                "total_count": {"sum": {"field": "count"}}
+            }
+        }
+    }
     try:
         response = es_client.search(index=ES_INDEX_NAME, query=query_body, size=0, aggregations=agg_body)
         buckets = response.get('aggregations', {}).get('labels', {}).get('buckets', [])
         labels = [b['key'] for b in buckets]
-        counts = [b['doc_count'] for b in buckets]
+        counts = [int(b['total_count']['value']) for b in buckets]
         print(f"API: Returning {len(labels)} labels for chart (fixed range).")
         return jsonify({"labels": labels, "counts": counts})
     except Exception as e:
@@ -79,13 +106,33 @@ def timeline_counts():
         print("API Warning: No labels requested for timeline.")
         return jsonify({}) 
 
-    interval = request.args.get('interval', default='15m', type=str)
+    # Force interval to 1h to match Hadoop output
+    interval = '1h'
     print(f"API: Querying fixed timeline: {START_TIME_STR} to {END_TIME_STR}, interval {interval} for labels {labels_to_include}")
-    query_body = {"bool":{"filter":[{"terms":{"label":labels_to_include}},{"range":{"processing_timestamp":{"gte":START_TIME_STR,"lt":END_TIME_STR}}}]}}
+    query_body = {
+        "bool": {
+            "filter": [
+                {"terms": {"label": labels_to_include}},
+                {"range": {"time_bucket": {"gte": START_TIME_STR, "lt": END_TIME_STR}}}
+            ]
+        }
+    }
     agg_body = {
         "detections_over_time": {
-            "date_histogram": {"field":"processing_timestamp","fixed_interval":interval,"min_doc_count":0,"time_zone":"UTC"},
-            "aggs": {"labels_in_bucket":{"terms":{"field":"label","size":len(labels_to_include)}}} # Use label field
+            "date_histogram": {
+                "field": "time_bucket",
+                "fixed_interval": interval,
+                "min_doc_count": 0,
+                "time_zone": "UTC"
+            },
+            "aggs": {
+                "labels_in_bucket": {
+                    "terms": {"field": "label", "size": len(labels_to_include)},
+                    "aggs": {
+                        "total_count": {"sum": {"field": "count"}}
+                    }
+                }
+            }
         }
     }
     try:
@@ -96,12 +143,12 @@ def timeline_counts():
             timestamp_ms = time_bucket['key']
             time_str = datetime.datetime.fromtimestamp(timestamp_ms/1000, tz=datetime.timezone.utc).isoformat()
             counts_in_bucket = {label: 0 for label in labels_to_include}
-            label_buckets = time_bucket.get('labels_in_bucket',{}).get('buckets',[])
+            label_buckets = time_bucket.get('labels_in_bucket', {}).get('buckets', [])
             for label_bucket in label_buckets:
-                 if label_bucket['key'] in counts_in_bucket:
-                     counts_in_bucket[label_bucket['key']] = label_bucket['doc_count']
+                if label_bucket['key'] in counts_in_bucket:
+                    counts_in_bucket[label_bucket['key']] = int(label_bucket['total_count']['value'])
             for label in labels_to_include:
-                 timeline_data[label].append({"t": time_str, "y": counts_in_bucket[label]})
+                timeline_data[label].append({"t": time_str, "y": counts_in_bucket[label]})
         print(f"API: Returning timeline data for labels: {labels_to_include} in fixed range.")
         return jsonify(timeline_data)
     except Exception as e:

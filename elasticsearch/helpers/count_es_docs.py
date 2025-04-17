@@ -11,7 +11,7 @@ print("Loaded environment variables.")
 ES_HOST_URL = os.environ.get('ES_HOST_URL', 'https://elastic.spacerra.com')
 ES_USERNAME = os.environ.get('ES_USERNAME', 'admin')
 ES_PASSWORD = os.environ.get('ES_PASSWORD')
-ES_INDEX_NAME = "image-detections-v1" 
+ES_INDEX_NAME = "hadoop-object-counts-v1" 
 
 # --- End Configuration ---
 
